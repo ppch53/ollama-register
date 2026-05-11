@@ -25,12 +25,15 @@ Main files:
 - `src/tempmail_client.py` - temporary mailbox integration
 - `src/turnstile_client.py` - Turnstile solver integration
 - `src/hero_sms_provider.py` - optional phone provider integration
+- `src/ollama_fingerprint.py` - lightweight Chrome profile/fingerprint consistency
 
 Capabilities:
 
 - TLS fingerprint impersonation through `curl_cffi`
 - WorkOS Server Action protocol replay
 - Turnstile handling
+- Per-account Chrome profile reuse for signup and key generation
+- Locale, timezone, language, viewport, and UA consistency by proxy country
 - Optional phone verification provider support
 - File-based account persistence with sensitive fields kept out of git
 

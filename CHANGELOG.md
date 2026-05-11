@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Ollama browser fingerprint profiles** (`src/ollama_fingerprint.py`)
+  - Adds per-account persistent Chrome profile directories for Ollama registration
+  - Keeps UA, locale, language, timezone, and viewport consistent with proxy country
+  - Persists non-secret fingerprint metadata in a local ignored registry
 - **Optional new-api integration selector** (`integrate_newapi.py`)
   - Defaults to dry-run and does not deploy or mutate new-api unless `--yes` is provided
   - Supports injecting an existing local gateway pool into new-api as one OpenAI-compatible channel
@@ -37,11 +41,6 @@
 
 ### Added
 
-- **Optional new-api integration selector** (`integrate_newapi.py`)
-  - Defaults to dry-run and does not deploy or mutate new-api unless `--yes` is provided
-  - Supports injecting an existing local gateway pool into new-api as one OpenAI-compatible channel
-  - Supports running an explicit external new-api deployment/preparation command when selected
-  - Redacts gateway keys in preview output
 - Ollama/WorkOS pure HTTP registration flow
 - Playwright-based browser registration
 - API gateway with key pool (`pool_gateway.py`)

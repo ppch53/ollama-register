@@ -111,6 +111,12 @@ def load_config(env_file: str | None = ".env") -> AppConfig:
         browser_headless=_get_bool("BROWSER_HEADLESS", True),
         playwright_proxy_server=os.getenv("PLAYWRIGHT_PROXY_SERVER") or None,
         registration_proxy=os.getenv("REGISTER_PROXY") or os.getenv("PLAYWRIGHT_PROXY_SERVER") or None,
+        ollama_profile_root=Path(os.getenv("OLLAMA_PROFILE_ROOT", "ollama_profiles")),
+        ollama_fingerprint_registry=Path(
+            os.getenv("OLLAMA_FINGERPRINT_REGISTRY", "ollama_fingerprints.json")
+        ),
+        ollama_fingerprint_country=_get_optional("OLLAMA_FINGERPRINT_COUNTRY")
+        or _get_optional("PROXY_COUNTRY"),
         default_timeout_seconds=_get_float("DEFAULT_TIMEOUT_SECONDS", 30.0),
         mail_poll_interval_seconds=_get_float("MAIL_POLL_INTERVAL_SECONDS", 3.0),
         mail_poll_timeout_seconds=_get_float("MAIL_POLL_TIMEOUT_SECONDS", 60.0),

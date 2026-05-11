@@ -7,13 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Browser
-from playwright.sync_api import BrowserContext
+from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import Playwright
-from playwright.sync_api import sync_playwright
 
 DEFAULT_ACTION_TIMEOUT_MS = 10_000
 DEFAULT_NAVIGATION_TIMEOUT_MS = 60_000
@@ -50,6 +46,11 @@ class PlaywrightSession:
         headless: bool,
         proxy_server: str | None = None,
         user_agent: str | None = None,
+        locale: str | None = None,
+        timezone_id: str | None = None,
+        viewport: dict[str, int] | None = None,
+        profile_dir: Path | None = None,
+        language: str | None = None,
         session_name: str | None = None,
     ) -> None:
         self.artifacts_dir = artifacts_dir
@@ -58,6 +59,11 @@ class PlaywrightSession:
         self._headless = headless
         self._proxy_server = proxy_server
         self._user_agent = user_agent
+        self._locale = locale
+        self._timezone_id = timezone_id
+        self._viewport = viewport or {"width": 1440, "height": 900}
+        self._profile_dir = profile_dir
+        self._language = language or locale
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
@@ -77,14 +83,21 @@ class PlaywrightSession:
         }
         if self._proxy_server:
             launch_options["proxy"] = {"server": self._proxy_server}
-        context_options: dict[str, Any] = {"viewport": {"width": 1440, "height": 900}}
+        context_options: dict[str, Any] = {"viewport": self._viewport}
         if self._user_agent:
             context_options["userAgent"] = self._user_agent
+        if self._locale:
+            context_options["locale"] = self._locale
+        if self._timezone_id:
+            context_options["timezoneId"] = self._timezone_id
+        if self._language:
+            context_options["extraHTTPHeaders"] = {"Accept-Language": self._language}
         config = {
             "browser": {
                 "browserName": "chromium",
                 "launchOptions": launch_options,
                 "contextOptions": context_options,
+                "userDataDir": str(self._profile_dir) if self._profile_dir else None,
             },
             "timeouts": {
                 "action": DEFAULT_ACTION_TIMEOUT_MS,
@@ -106,11 +119,42 @@ class PlaywrightSession:
         if self._proxy_server:
             launch_options["proxy"] = {"server": self._proxy_server}
 
+        context_options: dict[str, Any] = {"viewport": self._viewport}
+        if self._user_agent:
+            context_options["user_agent"] = self._user_agent
+        if self._locale:
+            context_options["locale"] = self._locale
+        if self._timezone_id:
+            context_options["timezone_id"] = self._timezone_id
+        if self._language:
+            context_options["extra_http_headers"] = {"Accept-Language": self._language}
+
         try:
-            browser = self._playwright.chromium.launch(channel="chrome", **launch_options)
+            if self._profile_dir:
+                self._profile_dir.mkdir(parents=True, exist_ok=True)
+                context = self._playwright.chromium.launch_persistent_context(
+                    str(self._profile_dir),
+                    channel="chrome",
+                    **launch_options,
+                    **context_options,
+                )
+                browser = context.browser
+            else:
+                browser = self._playwright.chromium.launch(channel="chrome", **launch_options)
+                context = browser.new_context(**context_options)
         except PlaywrightError:
             try:
-                browser = self._playwright.chromium.launch(**launch_options)
+                if self._profile_dir:
+                    self._profile_dir.mkdir(parents=True, exist_ok=True)
+                    context = self._playwright.chromium.launch_persistent_context(
+                        str(self._profile_dir),
+                        **launch_options,
+                        **context_options,
+                    )
+                    browser = context.browser
+                else:
+                    browser = self._playwright.chromium.launch(**launch_options)
+                    context = browser.new_context(**context_options)
             except PlaywrightError as exc:
                 msg = (
                     "Unable to launch browser with Python Playwright. "
@@ -118,13 +162,9 @@ class PlaywrightSession:
                 )
                 raise PlaywrightSessionError(msg) from exc
 
-        context_options: dict[str, Any] = {"viewport": {"width": 1440, "height": 900}}
-        if self._user_agent:
-            context_options["user_agent"] = self._user_agent
-        context = browser.new_context(**context_options)
         context.set_default_timeout(DEFAULT_ACTION_TIMEOUT_MS)
         context.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT_MS)
-        page = context.new_page()
+        page = context.pages[0] if context.pages else context.new_page()
 
         self._browser = browser
         self._context = context

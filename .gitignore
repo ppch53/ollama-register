@@ -30,6 +30,8 @@ v2/state/
 v2/audit/
 v2/profiles/
 artifacts/
+ollama_profiles/
+ollama_fingerprints.json
 *.lock
 *.lock.test
 

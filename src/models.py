@@ -30,6 +30,9 @@ class AppConfig:
     browser_headless: bool
     playwright_proxy_server: str | None
     registration_proxy: str | None
+    ollama_profile_root: Path
+    ollama_fingerprint_registry: Path
+    ollama_fingerprint_country: str | None
     default_timeout_seconds: float
     mail_poll_interval_seconds: float
     mail_poll_timeout_seconds: float

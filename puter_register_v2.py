@@ -1075,7 +1075,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def main() -> None:
+async def async_main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
@@ -1127,7 +1127,7 @@ async def main() -> None:
         health_path=state_dir / "mailbox_health.json",
     )
     # providers are registered externally or via config
-    # for now, this is a placeholder — providers are registered by the caller
+    # for now, this is a placeholder; providers are registered by the caller
 
     username_gen = UsernameGenerator(state_dir / "used_usernames.json")
 
@@ -1189,5 +1189,9 @@ async def main() -> None:
         print(f"  {r.get('email', '?')}: {r['state']}")
 
 
+def main() -> None:
+    asyncio.run(async_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

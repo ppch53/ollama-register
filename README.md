@@ -8,14 +8,14 @@ Automated account registration for [Ollama](https://ollama.com) and [Puter](http
 
 ### Puter v2 (Camoufox-based)
 
-- **Anti-detect browser** — Camoufox (Firefox-based) with C++ level fingerprint injection via BrowserForge
-- **Behavioral simulation** — burst-mode typing with typo/undo, Bezier-curve mouse movement, random scrolling, natural page dwell
-- **11-state registration machine** — full transition audit with crash recovery matrix
-- **Phone verification skip** — detects phone prompts, soft-lands (browse 30-60s), blacklists IP for the day
-- **Turnstile handling** — auto-solve → checkbox click → CapSolver fallback (3 attempts)
-- **Quarantine system** — 24h hold + delayed re-audit, optional 72h second check
-- **Circuit breaker** — auto-stops on repeated suspensions, mail failures, or rate limits
-- **Full audit trail** — 24-field JSONL records with behavioral timing and proxy session proofs
+- **Anti-detect browser** - Camoufox (Firefox-based) with C++ level fingerprint injection via BrowserForge
+- **Behavioral simulation** - burst-mode typing with typo/undo, Bezier-curve mouse movement, random scrolling, natural page dwell
+- **11-state registration machine** - full transition audit with crash recovery matrix
+- **Phone verification skip** - detects phone prompts, soft-lands (browse 30-60s), blacklists IP for the day
+- **Turnstile handling** - auto-solve -> checkbox click -> CapSolver fallback (3 attempts)
+- **Quarantine system** - 24h hold + delayed re-audit, optional 72h second check
+- **Circuit breaker** - auto-stops on repeated suspensions, mail failures, or rate limits
+- **Full audit trail** - 24-field JSONL records with behavioral timing and proxy session proofs
 
 ### Ollama (Pure HTTP)
 
@@ -26,11 +26,11 @@ Automated account registration for [Ollama](https://ollama.com) and [Puter](http
 
 ### Shared
 
-- **Rate-limited scheduling** — max 5 registrations/day, 30min minimum gap, UTC 8:00-22:00 window
-- **Sticky proxy management** — session-stable IPs with IP blacklist for phone-triggered addresses
-- **Mailbox provider pool** — health scoring (0.0-1.0), 3-failure cooldown, provider rotation
-- **Username generation** — 4 pattern modes (name+number, adj+noun, noun+number, name+noun)
-- **Structured logging** — JSON format, run_id tracking, sensitive field redaction
+- **Rate-limited scheduling** - max 5 registrations/day, 30min minimum gap, UTC 8:00-22:00 window
+- **Sticky proxy management** - session-stable IPs with IP blacklist for phone-triggered addresses
+- **Mailbox provider pool** - health scoring (0.0-1.0), 3-failure cooldown, provider rotation
+- **Username generation** - 4 pattern modes (name+number, adj+noun, noun+number, name+noun)
+- **Structured logging** - JSON format, run_id tracking, sensitive field redaction
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ Automated account registration for [Ollama](https://ollama.com) and [Puter](http
 ### Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ollama-register.git
+git clone https://github.com/ppch53/ollama-register.git
 cd ollama-register
 python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
@@ -130,9 +130,7 @@ pool_gateway.py        # OpenAI-compatible API gateway
 ## State Machine
 
 ```
-draft → browser_started → form_filled → form_submitted →
-email_verified → session_established → quarantined →
-audited → exportable
+draft -> browser_started -> form_filled -> form_submitted -> email_verified -> session_established -> quarantined -> audited -> exportable
 
 Terminal: failed, skipped_phone_verification
 ```

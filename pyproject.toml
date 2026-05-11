@@ -48,6 +48,9 @@ puter-v2 = "puter_register_v2:main"
 [tool.setuptools.packages.find]
 include = ["src*"]
 
+[tool.setuptools]
+py-modules = ["main", "ollama_register", "puter_register_v2"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

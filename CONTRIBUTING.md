@@ -3,7 +3,7 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ollama-register.git
+git clone https://github.com/ppch53/ollama-register.git
 cd ollama-register
 python -m venv .venv
 .venv\Scripts\activate  # Windows

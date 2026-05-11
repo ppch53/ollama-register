@@ -1,11 +1,17 @@
+import os
 import sqlite3
+
 import bcrypt
+
+password = os.getenv("NEWAPI_PASSWORD")
+if not password:
+    raise SystemExit("NEWAPI_PASSWORD is required")
 
 conn = sqlite3.connect("/opt/new-api/data/one-api.db")
 c = conn.cursor()
 
-# generate bcrypt hash for AdminPass2026!
-hashed = bcrypt.hashpw(b"AdminPass2026!", bcrypt.gensalt()).decode()
+# generate bcrypt hash from NEWAPI_PASSWORD
+hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 print("hash:", hashed[:30] + "...")
 
 c.execute("UPDATE users SET password = ? WHERE id = 1", (hashed,))

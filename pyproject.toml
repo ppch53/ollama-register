@@ -44,12 +44,13 @@ dev = [
 [project.scripts]
 ollama-register = "main:cli"
 puter-v2 = "puter_register_v2:main"
+newapi-integrate = "integrate_newapi:main"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
 
 [tool.setuptools]
-py-modules = ["main", "ollama_register", "puter_register_v2"]
+py-modules = ["main", "ollama_register", "puter_register_v2", "integrate_newapi"]
 
 [tool.ruff]
 target-version = "py311"

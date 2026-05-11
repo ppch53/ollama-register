@@ -18,17 +18,17 @@ Channel schema:
 from __future__ import annotations
 
 import json
-import sys
+import os
 import time
 from pathlib import Path
 
 import httpx
 
-NEW_API = "http://127.0.0.1:3000"
+NEW_API = os.getenv("NEWAPI_URL", "http://127.0.0.1:3000")
 PUTER_ACCOUNTS = Path("/opt/ollama-register/puter_accounts.json")
 OLLAMA_KEYS = Path("/opt/ollama-register/apikey.txt")
-ROOT_USER = "root"
-ROOT_PASSWORD = "AdminPass2026!"
+ROOT_USER = os.getenv("NEWAPI_USERNAME", "root")
+ROOT_PASSWORD = os.getenv("NEWAPI_PASSWORD")
 
 # Models we expose. Listed here for the "models" field of each channel
 # (same comma list across all channels of same kind for now).
@@ -79,6 +79,8 @@ OLLAMA_MODELS = ",".join(
 
 
 def login() -> tuple[httpx.Client, dict]:
+    if not ROOT_PASSWORD:
+        raise RuntimeError("NEWAPI_PASSWORD is required")
     client = httpx.Client(base_url=NEW_API, timeout=30.0)
     r = client.post(
         "/api/user/login",

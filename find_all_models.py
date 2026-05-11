@@ -1,8 +1,14 @@
-import urllib.request, json
+import json, os, urllib.request
+
+BASE = os.getenv("NEWAPI_URL", "http://127.0.0.1:3000")
+USERNAME = os.getenv("NEWAPI_USERNAME", "root")
+PASSWORD = os.getenv("NEWAPI_PASSWORD")
+if not PASSWORD:
+    raise SystemExit("NEWAPI_PASSWORD is required")
 
 req = urllib.request.Request(
-    "http://127.0.0.1:3000/api/user/login",
-    data=json.dumps({"username":"root","password":"AdminPass2026!"}).encode(),
+    BASE + "/api/user/login",
+    data=json.dumps({"username": USERNAME, "password": PASSWORD}).encode(),
     headers={"Content-Type":"application/json"},
     method="POST"
 )
@@ -18,7 +24,7 @@ paths = [
 ]
 
 for p in paths:
-    req2 = urllib.request.Request("http://127.0.0.1:3000" + p, headers={"Cookie": cookies, "New-Api-User": "1"})
+    req2 = urllib.request.Request(BASE + p, headers={"Cookie": cookies, "New-Api-User": "1"})
     try:
         resp2 = urllib.request.urlopen(req2)
         data = json.loads(resp2.read().decode())

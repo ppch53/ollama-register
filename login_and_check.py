@@ -1,26 +1,36 @@
-import urllib.request, json
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+
+BASE = os.getenv("NEWAPI_URL", "http://127.0.0.1:3000")
+USERNAME = os.getenv("NEWAPI_USERNAME", "root")
+PASSWORD = os.getenv("NEWAPI_PASSWORD")
+if not PASSWORD:
+    raise SystemExit("NEWAPI_PASSWORD is required")
 
 # login
 req = urllib.request.Request(
-    "http://127.0.0.1:3000/api/user/login",
-    data=json.dumps({"username":"root","password":"AdminPass2026!"}).encode(),
-    headers={"Content-Type":"application/json"},
-    method="POST"
+    BASE + "/api/user/login",
+    data=json.dumps({"username": USERNAME, "password": PASSWORD}).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
 )
 resp = urllib.request.urlopen(req)
 body = json.loads(resp.read().decode())
 print("login success:", body.get("success"))
-print("group:", body.get("data",{}).get("group"))
+print("group:", body.get("data", {}).get("group"))
 
 # save cookie
-cookies = resp.headers.get("Set-Cookie","")
+cookies = resp.headers.get("Set-Cookie", "")
 with open("/tmp/newapi.cookie", "w") as f:
     f.write(cookies)
 
 # get models
 req2 = urllib.request.Request(
-    "http://127.0.0.1:3000/api/models",
-    headers={"Cookie": cookies, "New-Api-User": "1"}
+    BASE + "/api/models",
+    headers={"Cookie": cookies, "New-Api-User": "1"},
 )
 resp2 = urllib.request.urlopen(req2)
 data = json.loads(resp2.read().decode())
@@ -32,5 +42,5 @@ else:
     items = models
     total = len(items)
 print("models total:", total, "items:", len(items))
-for m in items[:10]:
-    print(" ", m.get("id"))
+for model in items[:10]:
+    print(" ", model.get("id"))

@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Optional new-api integration selector** (`integrate_newapi.py`)
+  - Defaults to dry-run and does not deploy or mutate new-api unless `--yes` is provided
+  - Supports injecting an existing local gateway pool into new-api as one OpenAI-compatible channel
+  - Supports running an explicit external new-api deployment/preparation command when selected
+  - Redacts gateway keys in preview output
 - **Puter v2 registration** (`puter_register_v2.py`) - Camoufox-based stealth registration
   - 11-state state machine with full transition audit
   - Behavioral simulation: burst typing, Bezier mouse movement, random scrolling
@@ -26,11 +31,17 @@
 ### Changed
 
 - `requirements.txt` updated with `camoufox>=0.4,<1`
+- README reorganized around the two core projects: Ollama registration and Puter registration. new-api is documented as optional integration only.
 
 ## [1.0.0] - 2026-04-01
 
 ### Added
 
+- **Optional new-api integration selector** (`integrate_newapi.py`)
+  - Defaults to dry-run and does not deploy or mutate new-api unless `--yes` is provided
+  - Supports injecting an existing local gateway pool into new-api as one OpenAI-compatible channel
+  - Supports running an explicit external new-api deployment/preparation command when selected
+  - Redacts gateway keys in preview output
 - Ollama/WorkOS pure HTTP registration flow
 - Playwright-based browser registration
 - API gateway with key pool (`pool_gateway.py`)

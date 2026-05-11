@@ -11,15 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          args: "check --select E9,F63,F7,F82 --output-format=github ."
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: "check --output-format=github tests/test_cli_entrypoints.py tests/test_mailbox_provider.py tests/test_scheduler.py"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: "format --check tests/test_cli_entrypoints.py tests/test_mailbox_provider.py tests/test_scheduler.py"
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check --select E9,F63,F7,F82 --output-format=github .
+      - run: ruff check --output-format=github tests/test_cli_entrypoints.py tests/test_mailbox_provider.py tests/test_scheduler.py
+      - run: ruff format --check tests/test_cli_entrypoints.py tests/test_mailbox_provider.py tests/test_scheduler.py
 
   test:
     runs-on: ubuntu-latest

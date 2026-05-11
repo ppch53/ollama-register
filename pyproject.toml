@@ -49,7 +49,7 @@ newapi-integrate = "integrate_newapi:main"
 include = ["src*"]
 
 [tool.setuptools]
-py-modules = ["main", "ollama_register", "puter_register_v2", "integrate_newapi"]
+py-modules = ["main", "ollama_register", "puter_register_v2", "integrate_newapi", "pool_cleaner", "pool_gateway"]
 
 [tool.ruff]
 target-version = "py311"

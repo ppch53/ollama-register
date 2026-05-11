@@ -30,6 +30,7 @@ class AppConfig:
     browser_headless: bool
     playwright_proxy_server: str | None
     registration_proxy: str | None
+    ollama_sticky_proxy: bool
     ollama_profile_root: Path
     ollama_fingerprint_registry: Path
     ollama_fingerprint_country: str | None

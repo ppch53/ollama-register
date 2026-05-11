@@ -111,6 +111,7 @@ def load_config(env_file: str | None = ".env") -> AppConfig:
         browser_headless=_get_bool("BROWSER_HEADLESS", True),
         playwright_proxy_server=os.getenv("PLAYWRIGHT_PROXY_SERVER") or None,
         registration_proxy=os.getenv("REGISTER_PROXY") or os.getenv("PLAYWRIGHT_PROXY_SERVER") or None,
+        ollama_sticky_proxy=_get_bool("OLLAMA_STICKY_PROXY", False),
         ollama_profile_root=Path(os.getenv("OLLAMA_PROFILE_ROOT", "ollama_profiles")),
         ollama_fingerprint_registry=Path(
             os.getenv("OLLAMA_FINGERPRINT_REGISTRY", "ollama_fingerprints.json")

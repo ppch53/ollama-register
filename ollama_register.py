@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from src.hero_sms_provider import HeroSmsProvider
 from src.logging_config import StructuredRunLogger, configure_structured_logging
 from src.models import AccountRecord, AppConfig
 from src.passwords import generate_strong_password
+from src.proxy_session import ProxySession, ProxySessionFactory
 from src.tempmail_client import TempMailClient
 from src.turnstile_client import TurnstileClient
 
@@ -52,6 +53,7 @@ class OllamaPlaywrightRegister:
         phone_provider_factory=HeroSmsProvider,
         http_client: httpx.Client | None = None,
         logger: StructuredRunLogger | None = None,
+        proxy_session_factory: ProxySessionFactory | None = None,
     ) -> None:
         self.config = config
         self.browser_flow_factory = browser_flow_factory
@@ -60,54 +62,103 @@ class OllamaPlaywrightRegister:
         self.flaresolverr_client_factory = flaresolverr_client_factory
         self.phone_provider_factory = phone_provider_factory
         self._http_client = http_client
+        self.proxy_session_factory = proxy_session_factory or ProxySessionFactory()
         self.logger = logger or configure_structured_logging(
             "ollama_register",
             artifacts_root=config.artifacts_dir or "artifacts",
         )
 
     def register_single(self) -> RegistrationResult:
-        proxy_identity = self._resolve_proxy_identity()
-        fingerprint_country = self._resolve_fingerprint_country(proxy_identity)
-        self._enforce_rate_limits(proxy_identity)
-        self._record_attempt(proxy_identity)
-
-        tempmail_client = self.tempmail_client_factory(
-            base_url=self.config.tempmail_base_url,
-            api_key=self.config.tempmail_api_key,
-            timeout=self.config.default_timeout_seconds * 2,
-        )
-        turnstile_client = self.turnstile_client_factory(
-            self.config.turnstile_solver_url,
-            timeout=self.config.default_timeout_seconds,
-        )
-        flaresolverr_client = self.flaresolverr_client_factory(
-            self.config.flaresolverr_url,
-            timeout=self.config.default_timeout_seconds * 2,
-        )
-        phone_provider = self.phone_provider_factory(
-            base_url=self.config.hero_sms_base_url,
-            api_key=self.config.hero_sms_api_key,
-            service=self.config.hero_sms_service,
-            country=self.config.hero_sms_country_id,
-            operator=self.config.hero_sms_operator,
-            max_price=self.config.hero_sms_max_price,
-            fixed_price=self.config.hero_sms_fixed_price,
-            phone_exception=self.config.hero_sms_phone_exception,
-            artifacts_dir=self.logger.artifacts_dir,
-            timeout=self.config.default_timeout_seconds * 2,
-            progress=self._progress,
-        )
-        flow = self.browser_flow_factory(
-            self.config,
-            tempmail_client=tempmail_client,
-            turnstile_client=turnstile_client,
-            flaresolverr_client=flaresolverr_client,
-            phone_provider=phone_provider,
-            progress=self._progress,
-            fingerprint_country=fingerprint_country,
-        )
+        proxy_session = self._create_proxy_session()
+        owned_http_clients: list[httpx.Client] = []
+        tempmail_client = None
+        turnstile_client = None
+        flaresolverr_client = None
+        phone_provider = None
 
         try:
+            sticky_proxy_url = proxy_session.proxy_url if proxy_session else None
+            identity_proxy = sticky_proxy_url or self.config.registration_proxy
+            proxy_identity = (
+                proxy_session.ip_pre if proxy_session else self._resolve_proxy_identity(identity_proxy)
+            )
+
+            if proxy_session:
+                self.logger.info(
+                    "proxy",
+                    "sticky proxy session acquired",
+                    **proxy_session.safe_summary(),
+                )
+            fingerprint_country = self._resolve_fingerprint_country(proxy_identity, proxy_session)
+            self._enforce_rate_limits(proxy_identity)
+            self._record_attempt(proxy_identity)
+            effective_config = self._config_with_proxy(sticky_proxy_url)
+
+            tempmail_client = self.tempmail_client_factory(
+                base_url=self.config.tempmail_base_url,
+                api_key=self.config.tempmail_api_key,
+                http_client=self._make_helper_http_client(
+                    base_url=self.config.tempmail_base_url,
+                    timeout=self.config.default_timeout_seconds * 2,
+                    proxy_url=sticky_proxy_url,
+                    owned_clients=owned_http_clients,
+                ),
+                timeout=self.config.default_timeout_seconds * 2,
+            )
+            turnstile_client = self.turnstile_client_factory(
+                self.config.turnstile_solver_url,
+                http_client=self._make_helper_http_client(
+                    base_url=self.config.turnstile_solver_url,
+                    timeout=self.config.default_timeout_seconds,
+                    proxy_url=sticky_proxy_url,
+                    owned_clients=owned_http_clients,
+                ),
+                timeout=self.config.default_timeout_seconds,
+            )
+            flaresolverr_client = self.flaresolverr_client_factory(
+                self.config.flaresolverr_url,
+                http_client=self._make_helper_http_client(
+                    base_url=self.config.flaresolverr_url,
+                    timeout=self.config.default_timeout_seconds * 2,
+                    proxy_url=sticky_proxy_url,
+                    owned_clients=owned_http_clients,
+                ),
+                timeout=self.config.default_timeout_seconds * 2,
+            )
+            phone_provider = self.phone_provider_factory(
+                base_url=self.config.hero_sms_base_url,
+                api_key=self.config.hero_sms_api_key,
+                service=self.config.hero_sms_service,
+                country=self.config.hero_sms_country_id,
+                operator=self.config.hero_sms_operator,
+                max_price=self.config.hero_sms_max_price,
+                fixed_price=self.config.hero_sms_fixed_price,
+                phone_exception=self.config.hero_sms_phone_exception,
+                artifacts_dir=self.logger.artifacts_dir,
+                http_client=self._make_helper_http_client(
+                    base_url=self.config.hero_sms_base_url,
+                    timeout=self.config.default_timeout_seconds * 2,
+                    proxy_url=sticky_proxy_url,
+                    owned_clients=owned_http_clients,
+                ),
+                timeout=self.config.default_timeout_seconds * 2,
+                progress=self._progress,
+            )
+            flow = self.browser_flow_factory(
+                effective_config,
+                tempmail_client=tempmail_client,
+                turnstile_client=turnstile_client,
+                flaresolverr_client=flaresolverr_client,
+                phone_provider=phone_provider,
+                progress=self._progress,
+                fingerprint_country=fingerprint_country,
+                proxy_checkpoint=(
+                    (lambda stage: self._check_proxy_mid(proxy_session, stage))
+                    if proxy_session
+                    else None
+                ),
+            )
+
             address = tempmail_client.create_address()
             password = generate_strong_password()
             self.logger.info(
@@ -123,7 +174,9 @@ class OllamaPlaywrightRegister:
                 password=password,
             )
 
-            validation = self.validate_api_key(record.api_key)
+            self._check_proxy_mid(proxy_session)
+            validation = self.validate_api_key(record.api_key, proxy_url=sticky_proxy_url)
+            self._check_proxy_post(proxy_session)
             record.status = "verified" if validation.ok else "unverified"
             persistence = persist_account_result(
                 self.config.accounts_file,
@@ -145,10 +198,13 @@ class OllamaPlaywrightRegister:
                 proxy_identity=proxy_identity,
             )
         finally:
-            tempmail_client.close()
-            turnstile_client.close()
-            flaresolverr_client.close()
-            phone_provider.close()
+            for resource in (tempmail_client, turnstile_client, flaresolverr_client, phone_provider):
+                if resource is not None:
+                    resource.close()
+            for client in owned_http_clients:
+                client.close()
+            if proxy_session:
+                proxy_session.close()
 
     def revalidate(self) -> list[RegistrationResult]:
         accounts = load_accounts(self.config.accounts_file)
@@ -192,8 +248,11 @@ class OllamaPlaywrightRegister:
             self.logger.info("revalidate", "promoted unverified accounts", promoted_count=sum(1 for result in results if result.validation.ok))
         return results
 
-    def validate_api_key(self, api_key: str) -> ValidationResult:
-        client = self._http_client or httpx.Client(timeout=self.config.default_timeout_seconds)
+    def validate_api_key(self, api_key: str, proxy_url: str | None = None) -> ValidationResult:
+        client = self._http_client or httpx.Client(
+            timeout=self.config.default_timeout_seconds,
+            proxy=proxy_url,
+        )
         close_client = self._http_client is None
         try:
             response = client.get(
@@ -221,12 +280,65 @@ class OllamaPlaywrightRegister:
     def _progress(self, message: str) -> None:
         self.logger.info("browser", message)
 
-    def _resolve_proxy_identity(self) -> str:
-        proxy = self.config.registration_proxy
-        if not proxy:
+    def _create_proxy_session(self) -> ProxySession | None:
+        if not self.config.ollama_sticky_proxy:
+            return None
+        session = self.proxy_session_factory.create()
+        if session is None:
+            return None
+        try:
+            session.check_ip("pre")
+        except Exception:
+            session.close()
+            raise
+        return session
+
+    def _config_with_proxy(self, proxy_url: str | None) -> AppConfig:
+        if not proxy_url:
+            return self.config
+        return replace(
+            self.config,
+            playwright_proxy_server=proxy_url,
+            registration_proxy=proxy_url,
+        )
+
+    def _make_helper_http_client(
+        self,
+        *,
+        base_url: str,
+        timeout: float,
+        proxy_url: str | None,
+        owned_clients: list[httpx.Client],
+    ) -> httpx.Client | None:
+        if not proxy_url:
+            return None
+        client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout, proxy=proxy_url)
+        owned_clients.append(client)
+        return client
+
+    def _check_proxy_mid(self, proxy_session: ProxySession | None, stage: str = "mid") -> None:
+        if proxy_session is None:
+            return
+        proxy_session.check_ip("mid")
+        self.logger.info(
+            "proxy",
+            "sticky proxy mid-check",
+            checkpoint=stage,
+            **proxy_session.safe_summary(),
+        )
+
+    def _check_proxy_post(self, proxy_session: ProxySession | None) -> None:
+        if proxy_session is None:
+            return
+        proxy_session.check_ip("post")
+        self.logger.info("proxy", "sticky proxy post-check", **proxy_session.safe_summary())
+
+    def _resolve_proxy_identity(self, proxy: str | None = None) -> str:
+        effective_proxy = proxy if proxy is not None else self.config.registration_proxy
+        if not effective_proxy:
             return "direct"
         transport_kwargs: dict[str, Any] = {"timeout": min(self.config.default_timeout_seconds, 10)}
-        transport_kwargs["proxy"] = proxy
+        transport_kwargs["proxy"] = effective_proxy
         try:
             with httpx.Client(**transport_kwargs) as client:
                 response = client.get("https://api.ipify.org?format=json")
@@ -236,14 +348,23 @@ class OllamaPlaywrightRegister:
                 if ip:
                     return ip
         except Exception:
-            return proxy
-        return proxy
+            return self._redact_proxy_identity(effective_proxy)
+        return self._redact_proxy_identity(effective_proxy)
 
-    def _resolve_fingerprint_country(self, proxy_identity: str) -> str | None:
+    def _resolve_fingerprint_country(
+        self,
+        proxy_identity: str,
+        proxy_session: ProxySession | None = None,
+    ) -> str | None:
         if self.config.ollama_fingerprint_country:
             return self.config.ollama_fingerprint_country
         if proxy_identity == "direct" or ":" in proxy_identity:
             return None
+        if proxy_session:
+            return proxy_session.resolve_country(
+                proxy_identity,
+                timeout=min(self.config.default_timeout_seconds, 10),
+            )
         try:
             with httpx.Client(timeout=min(self.config.default_timeout_seconds, 10)) as client:
                 response = client.get(f"https://ipinfo.io/{proxy_identity}/country")
@@ -254,6 +375,22 @@ class OllamaPlaywrightRegister:
         except Exception:
             return None
         return None
+
+    @staticmethod
+    def _redact_proxy_identity(proxy_url: str | None) -> str:
+        if not proxy_url:
+            return "direct"
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(proxy_url)
+            if parsed.hostname:
+                suffix = f":{parsed.port}" if parsed.port else ""
+                scheme = parsed.scheme or "proxy"
+                return f"{scheme}://{parsed.hostname}{suffix}"
+        except Exception:
+            pass
+        return "proxy-unresolved"
 
     def _load_rate_limit_state(self) -> dict[str, Any]:
         path = self.config.rate_limit_state_file

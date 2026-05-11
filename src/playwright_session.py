@@ -5,6 +5,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
@@ -25,6 +26,18 @@ STEALTH_BROWSER_ARGS = [
 
 class PlaywrightSessionError(RuntimeError):
     """Raised when the native Playwright session fails."""
+
+
+def _redact_proxy_url(proxy_url: str) -> str:
+    try:
+        parsed = urlparse(proxy_url)
+    except ValueError:
+        return "proxy://redacted"
+    if not parsed.hostname:
+        return "proxy://redacted"
+    scheme = parsed.scheme or "proxy"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{scheme}://{parsed.hostname}{port}"
 
 
 @dataclass(slots=True)
@@ -82,7 +95,7 @@ class PlaywrightSession:
             "args": STEALTH_BROWSER_ARGS,
         }
         if self._proxy_server:
-            launch_options["proxy"] = {"server": self._proxy_server}
+            launch_options["proxy"] = {"server": _redact_proxy_url(self._proxy_server)}
         context_options: dict[str, Any] = {"viewport": self._viewport}
         if self._user_agent:
             context_options["userAgent"] = self._user_agent

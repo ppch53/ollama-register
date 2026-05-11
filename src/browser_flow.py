@@ -148,6 +148,7 @@ class BrowserFlow:
         phone_provider: PhoneOtpProvider | None,
         progress: Callable[[str], None] | None = None,
         fingerprint_country: str | None = None,
+        proxy_checkpoint: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self.tempmail_client = tempmail_client
@@ -155,6 +156,7 @@ class BrowserFlow:
         self.flaresolverr_client = flaresolverr_client
         self.phone_provider = phone_provider
         self.progress = progress
+        self.proxy_checkpoint = proxy_checkpoint
         self.fingerprint_country = fingerprint_country or config.ollama_fingerprint_country
         self._last_turnstile_debug: dict[str, Any] | None = None
         self._profile_manager = OllamaBrowserProfileManager(
@@ -185,6 +187,7 @@ class BrowserFlow:
             self._log("[signup] filling password")
             self._fill_textbox(signup_session, "Password", password)
             self._submit_with_turnstile(signup_session)
+            self._check_proxy("after_password_turnstile")
             self._log("[mail] waiting for verification email")
             code = self._poll_email_code(jwt)
             self._log("[signup] submitting email verification code")
@@ -275,6 +278,7 @@ class BrowserFlow:
         ensure_signup_advanced(page_state, session.get_page_state())
 
     def _handle_phone_challenge(self, session: PlaywrightSession) -> None:
+        self._check_proxy("before_phone_step")
         if detect_signup_stage(session.get_page_state()) != "phone":
             self._log("[phone] phone challenge not required")
             return
@@ -348,6 +352,11 @@ class BrowserFlow:
         if self.progress is None:
             return
         self.progress(message)
+
+    def _check_proxy(self, stage: str) -> None:
+        if self.proxy_checkpoint is None:
+            return
+        self.proxy_checkpoint(stage)
 
     def _page_debug_summary(self, page_state: PageState | None) -> dict[str, Any] | None:
         if page_state is None:

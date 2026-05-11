@@ -35,7 +35,58 @@ Capabilities:
 - Per-account Chrome profile reuse for signup and key generation
 - Locale, timezone, language, viewport, and UA consistency by proxy country
 - Optional phone verification provider support
+- Provider-aware sticky proxy sessions for browser and HTTP helper traffic
 - File-based account persistence with sensitive fields kept out of git
+
+### Ollama Proxy Modes
+
+The default proxy mode is unchanged: set `REGISTER_PROXY=http://user:pass@host:port`
+or `PLAYWRIGHT_PROXY_SERVER=...` and leave `OLLAMA_STICKY_PROXY` unset or `0`.
+That preserves the existing non-sticky behavior.
+
+Sticky mode is enabled with `OLLAMA_STICKY_PROXY=1`. Each `register_single()`
+generates one session id and builds one proxy URL for the Playwright browser,
+tempmail, Turnstile, FlareSolverr, HeroSMS, IP checks, and final API-key
+validation. The flow resolves `ip_pre` before opening the browser, checks
+`ip_mid` after the email/password Turnstile and before any phone step, then
+checks `ip_post` before writing account files. If the IP changes, the attempt
+fails with `proxy_drift` before persistence.
+
+Supported providers are `rayobyte`, `smartproxy`, `iproyal`, `oxylabs`,
+`brightdata`, and `generic`. Supported schemes are `http`, `https`, and
+`socks5`. Split `PROXY_*` fields take precedence over `REGISTER_PROXY`; if split
+fields are absent, sticky mode parses `REGISTER_PROXY` for scheme, host, port,
+username, and password.
+
+Template tokens are `{scheme}`, `{host}`, `{port}`, `{username}`, `{password}`,
+`{session}`, `{country}`, and `{country_upper}`. Passwords and full proxy URLs
+are not written to structured logs. If a Playwright artifact is written, its
+proxy server is redacted to scheme, host, and port.
+
+Provider defaults:
+
+- `smartproxy` and `iproyal` default to `{username}-session-{session}`.
+- `rayobyte`, `oxylabs`, `brightdata`, and `generic` require
+  `PROXY_SESSION_TEMPLATE` or `PROXY_URL_TEMPLATE` because account and zone
+  formats vary.
+
+Current Rayobyte-style setup:
+
+```env
+OLLAMA_STICKY_PROXY=1
+PROXY_PROVIDER=rayobyte
+PROXY_SCHEME=http
+PROXY_HOST=la.residential.rayobyte.com
+PROXY_PORT=8000
+PROXY_USERNAME=your-dashboard-username
+PROXY_PASSWORD=your-dashboard-password
+PROXY_COUNTRY=US
+PROXY_SESSION_TEMPLATE={username}-session-{session}
+```
+
+Rayobyte username syntax is account-specific, so confirm the exact sticky
+session template in the Rayobyte dashboard. If the template is wrong, proxy auth
+may fail or the IP may still rotate.
 
 Typical run:
 

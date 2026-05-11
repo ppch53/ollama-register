@@ -9,6 +9,7 @@ import httpx
 
 from ollama_register import OllamaPlaywrightRegister
 from src.models import AccountRecord, AppConfig, TempMailAddress
+from src.proxy_session import ProxyDriftError
 
 
 class FakeClosable:
@@ -43,6 +44,7 @@ class FakeBrowserFlow:
     instances: list["FakeBrowserFlow"] = []
 
     def __init__(self, config, **kwargs) -> None:
+        self.config = config
         self.kwargs = kwargs
         self.called_with = None
         self.raise_error = kwargs.get("raise_error", False)
@@ -58,6 +60,58 @@ class FakeBrowserFlow:
             api_key="ok_test_key_1234567890",
             cookies=[{"name": "session", "value": "abc"}],
         )
+
+
+
+class FakeProxySession:
+    def __init__(self, *, drift_on: str | None = None) -> None:
+        self.proxy_url = "http://sticky-user:secret@proxy.test:8000"
+        self.ip_pre = ""
+        self.ip_mid = ""
+        self.ip_post = ""
+        self.country = "DE"
+        self.drift_detected = False
+        self.session_id = "sticky-session"
+        self.closed = False
+        self.drift_on = drift_on
+
+    def check_ip(self, stage: str) -> str:
+        if self.drift_on == stage:
+            self.drift_detected = True
+            raise ProxyDriftError("proxy drift")
+        ip = "203.0.113.10"
+        if stage == "pre":
+            self.ip_pre = ip
+        elif stage == "mid":
+            self.ip_mid = ip
+        elif stage == "post":
+            self.ip_post = ip
+        return ip
+
+    def safe_summary(self) -> dict:
+        return {
+            "provider": "test",
+            "session_id": self.session_id,
+            "ip_pre": self.ip_pre,
+            "ip_mid": self.ip_mid,
+            "ip_post": self.ip_post,
+            "drift_detected": self.drift_detected,
+            "country": self.country,
+        }
+
+    def resolve_country(self, ip: str, *, timeout: float = 10.0) -> str | None:
+        return self.country
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeProxySessionFactory:
+    def __init__(self, session: FakeProxySession) -> None:
+        self.session = session
+
+    def create(self, account_hint: str = "") -> FakeProxySession:
+        return self.session
 
 
 class RaisingBrowserFlow(FakeBrowserFlow):
@@ -90,6 +144,7 @@ def build_config(root: Path) -> AppConfig:
         browser_headless=True,
         playwright_proxy_server=None,
         registration_proxy=None,
+        ollama_sticky_proxy=False,
         ollama_profile_root=root / "ollama_profiles",
         ollama_fingerprint_registry=root / "ollama_fingerprints.json",
         ollama_fingerprint_country="US",
@@ -114,11 +169,18 @@ class OllamaRegisterTests(unittest.TestCase):
         FakeBrowserFlow.instances.clear()
         FakeClosable.instances.clear()
 
-    def make_register(self, *, browser_flow_factory=FakeBrowserFlow, validation_status: int = 200) -> OllamaPlaywrightRegister:
+    def make_register(
+        self,
+        *,
+        browser_flow_factory=FakeBrowserFlow,
+        validation_status: int = 200,
+        config: AppConfig | None = None,
+        proxy_session_factory=None,
+    ) -> OllamaPlaywrightRegister:
         transport = httpx.MockTransport(
             lambda request: httpx.Response(validation_status, text='{"models":[]}')
         )
-        config = build_config(self.root)
+        config = config or build_config(self.root)
         http_client = httpx.Client(transport=transport)
         return OllamaPlaywrightRegister(
             config,
@@ -128,6 +190,7 @@ class OllamaRegisterTests(unittest.TestCase):
             flaresolverr_client_factory=FakeClosable,
             phone_provider_factory=FakePhoneProvider,
             http_client=http_client,
+            proxy_session_factory=proxy_session_factory,
         )
 
     def test_register_single_uses_browser_flow(self) -> None:
@@ -162,6 +225,42 @@ class OllamaRegisterTests(unittest.TestCase):
         self.assertTrue(FakeClosable.instances)
         self.assertTrue(all(instance.closed for instance in FakeClosable.instances))
 
+
+
+    def test_sticky_proxy_session_is_passed_to_browser_flow(self) -> None:
+        config = build_config(self.root)
+        config.ollama_sticky_proxy = True
+        config.ollama_fingerprint_country = None
+        proxy_session = FakeProxySession()
+        register = self.make_register(
+            config=config,
+            proxy_session_factory=FakeProxySessionFactory(proxy_session),
+        )
+
+        result = register.register_single()
+
+        self.assertEqual("verified", result.record.status)
+        flow = FakeBrowserFlow.instances[0]
+        self.assertEqual("http://sticky-user:secret@proxy.test:8000", flow.config.playwright_proxy_server)
+        self.assertEqual("http://sticky-user:secret@proxy.test:8000", flow.config.registration_proxy)
+        self.assertEqual("DE", flow.kwargs["fingerprint_country"])
+        self.assertTrue(proxy_session.closed)
+
+    def test_proxy_drift_aborts_before_persistence(self) -> None:
+        config = build_config(self.root)
+        config.ollama_sticky_proxy = True
+        proxy_session = FakeProxySession(drift_on="mid")
+        register = self.make_register(
+            config=config,
+            proxy_session_factory=FakeProxySessionFactory(proxy_session),
+        )
+
+        with self.assertRaises(ProxyDriftError):
+            register.register_single()
+
+        self.assertFalse((self.root / "accounts.json").exists())
+        self.assertFalse((self.root / "apikey.txt").exists())
+        self.assertTrue(proxy_session.closed)
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,6 +67,7 @@ class OllamaPlaywrightRegister:
 
     def register_single(self) -> RegistrationResult:
         proxy_identity = self._resolve_proxy_identity()
+        fingerprint_country = self._resolve_fingerprint_country(proxy_identity)
         self._enforce_rate_limits(proxy_identity)
         self._record_attempt(proxy_identity)
 
@@ -103,6 +104,7 @@ class OllamaPlaywrightRegister:
             flaresolverr_client=flaresolverr_client,
             phone_provider=phone_provider,
             progress=self._progress,
+            fingerprint_country=fingerprint_country,
         )
 
         try:
@@ -236,6 +238,22 @@ class OllamaPlaywrightRegister:
         except Exception:
             return proxy
         return proxy
+
+    def _resolve_fingerprint_country(self, proxy_identity: str) -> str | None:
+        if self.config.ollama_fingerprint_country:
+            return self.config.ollama_fingerprint_country
+        if proxy_identity == "direct" or ":" in proxy_identity:
+            return None
+        try:
+            with httpx.Client(timeout=min(self.config.default_timeout_seconds, 10)) as client:
+                response = client.get(f"https://ipinfo.io/{proxy_identity}/country")
+                response.raise_for_status()
+                country = response.text.strip().upper()
+                if len(country) == 2 and country.isalpha():
+                    return country
+        except Exception:
+            return None
+        return None
 
     def _load_rate_limit_state(self) -> dict[str, Any]:
         path = self.config.rate_limit_state_file

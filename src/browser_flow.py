@@ -147,6 +147,7 @@ class BrowserFlow:
         flaresolverr_client: FlareSolverrClient,
         phone_provider: PhoneOtpProvider | None,
         progress: Callable[[str], None] | None = None,
+        fingerprint_country: str | None = None,
     ) -> None:
         self.config = config
         self.tempmail_client = tempmail_client
@@ -154,6 +155,7 @@ class BrowserFlow:
         self.flaresolverr_client = flaresolverr_client
         self.phone_provider = phone_provider
         self.progress = progress
+        self.fingerprint_country = fingerprint_country or config.ollama_fingerprint_country
         self._last_turnstile_debug: dict[str, Any] | None = None
         self._profile_manager = OllamaBrowserProfileManager(
             config.ollama_profile_root,
@@ -164,7 +166,7 @@ class BrowserFlow:
     def run(self, *, email: str, jwt: str, password: str) -> AccountRecord:
         self._browser_profile = self._profile_manager.create(
             account_hint=email,
-            country=self.config.ollama_fingerprint_country,
+            country=self.fingerprint_country,
         )
         self._log(
             "[fingerprint] using ollama browser profile "
@@ -215,7 +217,7 @@ class BrowserFlow:
         if profile is None:
             profile = self._profile_manager.create(
                 account_hint=f"manual-{int(time.time())}",
-                country=self.config.ollama_fingerprint_country,
+                country=self.fingerprint_country,
             )
             self._browser_profile = profile
         return PlaywrightSession(

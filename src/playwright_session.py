@@ -214,28 +214,67 @@ class PlaywrightSession:
 
     def get_page_state(self) -> PageState:
         page = self._page_or_raise()
-        html = page.content()
-        payload = page.evaluate(
-            """() => ({
-                url: window.location.href,
-                title: document.title,
-                body: document.body?.innerText || '',
-                html: document.documentElement.outerHTML,
-            })"""
-        )
-        if not isinstance(payload, dict):
-            raise PlaywrightSessionError("Unable to read page state")
-        return PageState(
-            url=str(payload["url"]),
-            title=str(payload["title"]),
-            body=str(payload["body"]),
-            html=html or str(payload["html"]),
-            frames=[str(frame.url) for frame in page.frames],
-        )
+        last_error: Exception | None = None
+        for _ in range(8):
+            try:
+                html = page.content()
+                payload = page.evaluate(
+                    """() => ({
+                        url: window.location.href,
+                        title: document.title,
+                        body: document.body?.innerText || '',
+                        html: document.documentElement.outerHTML,
+                    })"""
+                )
+                if not isinstance(payload, dict):
+                    raise PlaywrightSessionError("Unable to read page state")
+                return PageState(
+                    url=str(payload["url"]),
+                    title=str(payload["title"]),
+                    body=str(payload["body"]),
+                    html=html or str(payload["html"]),
+                    frames=[str(frame.url) for frame in page.frames],
+                )
+            except PlaywrightError as exc:
+                last_error = exc
+                page.wait_for_timeout(300)
+        raise PlaywrightSessionError(
+            "Unable to read page state after navigation settled"
+        ) from last_error
 
     def fill_textbox(self, label: str, value: str) -> None:
         page = self._page_or_raise()
-        page.get_by_role("textbox", name=label).fill(value)
+        try:
+            page.get_by_role("textbox", name=label).fill(value)
+            return
+        except PlaywrightError as first_error:
+            selectors = self._textbox_fallback_selectors(label)
+            last_error: Exception = first_error
+            for selector in selectors:
+                try:
+                    page.locator(selector).first.fill(value, timeout=5000)
+                    return
+                except PlaywrightError as exc:
+                    last_error = exc
+            raise PlaywrightSessionError(f"Unable to fill textbox: {label}") from last_error
+
+    @staticmethod
+    def _textbox_fallback_selectors(label: str) -> list[str]:
+        normalized = label.strip().lower()
+        if normalized == "email":
+            return [
+                'input[type="email"]',
+                'input[name="email"]',
+                'input[autocomplete="email"]',
+            ]
+        if normalized == "password":
+            return [
+                'input[type="password"]',
+                'input[name="password"]',
+                'input[autocomplete="new-password"]',
+                'input[autocomplete="current-password"]',
+            ]
+        return []
 
     def fill_verification_code(self, code: str) -> None:
         page = self._page_or_raise()

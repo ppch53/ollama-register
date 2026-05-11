@@ -1,0 +1,10 @@
+import sqlite3
+conn = sqlite3.connect("/opt/new-api/data/one-api.db")
+c = conn.cursor()
+c.execute("SELECT count(*) FROM models")
+print("total models in table:", c.fetchone()[0])
+c.execute("SELECT model_name FROM models WHERE model_name LIKE '%gpt-4o-mini%'")
+print("gpt-4o-mini in models table:", c.fetchone())
+c.execute("SELECT count(*) FROM channels WHERE `group` = 'default' AND status = 1 AND models LIKE '%gpt-4o-mini%'")
+print("channels with gpt-4o-mini in default group:", c.fetchone()[0])
+conn.close()

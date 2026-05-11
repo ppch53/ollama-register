@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# State and runtime data
+v2/state/
+v2/audit/
+v2/profiles/
+artifacts/
+*.lock
+*.lock.test
+
+# Account data (sensitive)
+accounts.json
+apikey.txt
+ollama_accounts_backup.*
+ollama_apikeys_backup.*
+outlook_leftover.txt
+
+# Working directories (not part of the project)
+51d1267477c69ec97eec17eacef5377702ca955e/
+_extract/
+_tmp_new_api_source/
+.juno_task/
+
+# IDE / AI agent config
+.claude/
+.kiro/
+
+# Internal operational handoff notes
+AGENTS.md
+HANDOVER.md
+
+# Backups
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local backup verification scripts
+verify_backup.py
+verify_backup_vps.py
+verify_puter_login.py

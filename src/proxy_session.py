@@ -14,9 +14,16 @@ _ALLOWED_SCHEMES = {"http", "https", "socks5"}
 _DEFAULT_SESSION_TEMPLATE = "{username}-session-{session}"
 _DEFAULT_TEMPLATE_PROVIDERS = {"smartproxy", "iproyal"}
 _TEMPLATE_REQUIRED_PROVIDERS = {"rayobyte", "oxylabs", "brightdata", "generic"}
-_SUPPORTED_PROVIDERS = _DEFAULT_TEMPLATE_PROVIDERS | _TEMPLATE_REQUIRED_PROVIDERS
+_API_EXTRACTION_PROVIDERS = {"b2proxy", "bestgo"}
+_SUPPORTED_PROVIDERS = (
+    _DEFAULT_TEMPLATE_PROVIDERS | _TEMPLATE_REQUIRED_PROVIDERS | _API_EXTRACTION_PROVIDERS
+)
 _DEFAULT_IP_CHECK_URL = "https://api.ipify.org?format=json"
 _PROVIDER_ALIASES = {
+    "b2": "b2proxy",
+    "b2proxyresidential": "b2proxy",
+    "bestgo": "b2proxy",
+    "bestgorrp": "b2proxy",
     "bright": "brightdata",
     "bright_data": "brightdata",
     "bright-data": "brightdata",
@@ -47,6 +54,7 @@ class ProxyConfig:
     country: str | None = None
     session_template: str | None = None
     url_template: str | None = None
+    api_url: str | None = None
     raw_proxy: str | None = None
     ip_check_url: str = _DEFAULT_IP_CHECK_URL
 
@@ -79,6 +87,7 @@ class ProxyConfig:
         country = _clean(source.get("PROXY_COUNTRY"))
         session_template = _clean(source.get("PROXY_SESSION_TEMPLATE"))
         url_template = _clean(source.get("PROXY_URL_TEMPLATE"))
+        api_url = _clean(source.get("PROXY_API_URL")) or _clean(source.get("REGISTER_PROXY_API"))
         ip_check_url = _clean(source.get("PROXY_IP_CHECK_URL")) or _DEFAULT_IP_CHECK_URL
 
         config = cls(
@@ -92,6 +101,7 @@ class ProxyConfig:
             country=country.upper() if country else None,
             session_template=session_template,
             url_template=url_template,
+            api_url=api_url,
             raw_proxy=raw_proxy,
             ip_check_url=ip_check_url,
         )
@@ -102,6 +112,12 @@ class ProxyConfig:
     def validate_sticky(self) -> None:
         if self.provider not in _SUPPORTED_PROVIDERS:
             raise ProxyConfigError(f"Unsupported proxy provider: {self.provider}")
+        if self.provider in _API_EXTRACTION_PROVIDERS:
+            if not self.api_url:
+                raise ProxyConfigError(
+                    f"Provider {self.provider} requires PROXY_API_URL or REGISTER_PROXY_API"
+                )
+            return
         if self.url_template:
             return
         if self.scheme not in _ALLOWED_SCHEMES:
@@ -142,6 +158,19 @@ class ProxyConfig:
         username = quote(self.username_for_session(session_id), safe="")
         password = quote(self.password, safe="")
         return f"{self.scheme}://{username}:{password}@{self.host}:{self.port}"
+
+    def proxy_url_from_api_response(self, payload: str) -> str:
+        if self.provider not in _API_EXTRACTION_PROVIDERS:
+            raise ProxyConfigError(f"Provider {self.provider} does not support API extraction")
+        first_line = payload.strip().splitlines()[0].strip()
+        if not first_line:
+            raise ProxyConfigError("Proxy API returned an empty response")
+        parsed = urlparse(first_line)
+        if parsed.scheme and parsed.hostname and parsed.port:
+            return first_line
+        if ":" not in first_line:
+            raise ProxyConfigError(f"Unexpected proxy API response: {first_line}")
+        return f"{self.scheme}://{first_line}"
 
 
 @dataclass(slots=True)
@@ -227,13 +256,32 @@ class ProxySessionFactory:
         if not self.config.enabled:
             return None
         sid = session_id or uuid.uuid4().hex[:16]
-        proxy_url = self.config.proxy_url_for_session(sid)
+        proxy_url = self._build_proxy_url(sid)
         return ProxySession(
             config=self.config,
             session_id=sid,
             proxy_url=proxy_url,
             country=self.config.country,
         )
+
+    def _build_proxy_url(self, session_id: str) -> str:
+        if self.config.provider in _API_EXTRACTION_PROVIDERS:
+            return self._create_api_proxy_url()
+        return self.config.proxy_url_for_session(session_id)
+
+    def _create_api_proxy_url(self) -> str:
+        api_url = self.config.api_url
+        if not api_url:
+            raise ProxyConfigError(
+                f"Provider {self.config.provider} requires PROXY_API_URL or REGISTER_PROXY_API"
+            )
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                response = client.get(api_url)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise ProxyConfigError(f"Proxy API request failed: {exc}") from exc
+        return self.config.proxy_url_from_api_response(response.text)
 
 
 def _clean(value: str | None) -> str | None:
@@ -277,6 +325,8 @@ def _infer_provider(raw_proxy: str | None) -> str:
     if not raw_proxy:
         return "generic"
     host = (urlparse(raw_proxy).hostname or "").lower()
+    if "bestgo.work" in host:
+        return "b2proxy"
     if "rayobyte" in host:
         return "rayobyte"
     if "smartproxy" in host:

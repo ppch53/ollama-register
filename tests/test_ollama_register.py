@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 
@@ -62,7 +63,6 @@ class FakeBrowserFlow:
         )
 
 
-
 class FakeProxySession:
     def __init__(self, *, drift_on: str | None = None) -> None:
         self.proxy_url = "http://sticky-user:secret@proxy.test:8000"
@@ -104,7 +104,6 @@ class FakeProxySession:
 
     def close(self) -> None:
         self.closed = True
-
 
 class FakeProxySessionFactory:
     def __init__(self, session: FakeProxySession) -> None:
@@ -226,7 +225,6 @@ class OllamaRegisterTests(unittest.TestCase):
         self.assertTrue(all(instance.closed for instance in FakeClosable.instances))
 
 
-
     def test_sticky_proxy_session_is_passed_to_browser_flow(self) -> None:
         config = build_config(self.root)
         config.ollama_sticky_proxy = True
@@ -246,6 +244,24 @@ class OllamaRegisterTests(unittest.TestCase):
         self.assertEqual("DE", flow.kwargs["fingerprint_country"])
         self.assertTrue(proxy_session.closed)
 
+    def test_sticky_proxy_helper_direct_mode_preserves_browser_proxy(self) -> None:
+        config = build_config(self.root)
+        config.ollama_sticky_proxy = True
+        proxy_session = FakeProxySession()
+        register = self.make_register(
+            config=config,
+            proxy_session_factory=FakeProxySessionFactory(proxy_session),
+        )
+
+        with patch.dict("os.environ", {"PROXY_HELPERS_DIRECT": "1"}, clear=False):
+            result = register.register_single()
+
+        self.assertEqual("verified", result.record.status)
+        flow = FakeBrowserFlow.instances[0]
+        self.assertEqual("http://sticky-user:secret@proxy.test:8000", flow.config.playwright_proxy_server)
+        self.assertEqual("US", flow.kwargs["fingerprint_country"])
+        self.assertTrue(proxy_session.closed)
+
     def test_proxy_drift_aborts_before_persistence(self) -> None:
         config = build_config(self.root)
         config.ollama_sticky_proxy = True
@@ -261,6 +277,7 @@ class OllamaRegisterTests(unittest.TestCase):
         self.assertFalse((self.root / "accounts.json").exists())
         self.assertFalse((self.root / "apikey.txt").exists())
         self.assertTrue(proxy_session.closed)
+
 
 if __name__ == "__main__":
     unittest.main()

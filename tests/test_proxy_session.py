@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import httpx
 
@@ -98,6 +99,47 @@ class ProxySessionTests(unittest.TestCase):
         self.assertIsNotNone(session)
         assert session is not None
         self.assertEqual("socks5://user-session-xyz:pass@example.test:1234", session.proxy_url)
+
+    def test_b2proxy_api_extraction_returns_http_proxy_url(self) -> None:
+        config = ProxyConfig.from_env(
+            {
+                "OLLAMA_STICKY_PROXY": "1",
+                "PROXY_PROVIDER": "b2proxy",
+                "PROXY_SCHEME": "http",
+                "PROXY_API_URL": "http://proxy-api.test/gen?foo=bar",
+            }
+        )
+
+        class FakeApiClient:
+            def __init__(self, *args, **kwargs) -> None:
+                self.requested_url = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, url: str) -> httpx.Response:
+                self.requested_url = url
+                return httpx.Response(200, text="107.151.234.173:10001\r\n", request=httpx.Request("GET", url))
+
+        with patch("src.proxy_session.httpx.Client", FakeApiClient):
+            session = ProxySessionFactory(config).create(session_id="sticky-api")
+
+        self.assertIsNotNone(session)
+        assert session is not None
+        self.assertEqual("http://107.151.234.173:10001", session.proxy_url)
+
+    def test_b2proxy_requires_api_url(self) -> None:
+        with self.assertRaises(ProxyConfigError):
+            ProxyConfig.from_env(
+                {
+                    "OLLAMA_STICKY_PROXY": "1",
+                    "PROXY_PROVIDER": "b2proxy",
+                    "PROXY_SCHEME": "http",
+                }
+            )
 
     def test_proxy_drift_raises(self) -> None:
         calls = iter([

@@ -175,7 +175,8 @@ class OllamaPlaywrightRegister:
             )
 
             self._check_proxy_mid(proxy_session)
-            validation = self.validate_api_key(record.api_key, proxy_url=sticky_proxy_url)
+            validation_proxy = None if self._helpers_use_direct_connection() else sticky_proxy_url
+            validation = self.validate_api_key(record.api_key, proxy_url=validation_proxy)
             self._check_proxy_post(proxy_session)
             record.status = "verified" if validation.ok else "unverified"
             persistence = persist_account_result(
@@ -310,11 +311,16 @@ class OllamaPlaywrightRegister:
         proxy_url: str | None,
         owned_clients: list[httpx.Client],
     ) -> httpx.Client | None:
-        if not proxy_url:
+        if not proxy_url or self._helpers_use_direct_connection():
             return None
         client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout, proxy=proxy_url)
         owned_clients.append(client)
         return client
+
+    @staticmethod
+    def _helpers_use_direct_connection() -> bool:
+        value = os.getenv("PROXY_HELPERS_DIRECT", "").strip().lower()
+        return value in {"1", "true", "yes", "on"}
 
     def _check_proxy_mid(self, proxy_session: ProxySession | None, stage: str = "mid") -> None:
         if proxy_session is None:

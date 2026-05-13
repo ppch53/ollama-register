@@ -21,6 +21,7 @@ ENV/
 *~
 
 # Environment and secrets
+凭证/
 .env
 .env.*
 !.env.example

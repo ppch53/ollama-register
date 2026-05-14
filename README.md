@@ -110,12 +110,6 @@ response can be either `host:port` or a full proxy URL. `PROXY_IP_CHECK_URL`
 can override the default IP proof endpoint when a provider is sensitive to a
 particular checker.
 
-For email delivery, Puter v2 can use the existing Outlook pool format from
-`outlook_inbox.py`. Set `PUTER_OUTLOOK_POOL_FILE` or `OUTLOOK_POOL_FILE` to a
-pool file whose lines look like `email----password----client_id----refresh_token`
-or `email----password----refresh_token----client_id`; used addresses are tracked
-under `v2/state/outlook_used.txt`.
-
 Main files:
 
 - `puter_register_v2.py` - Puter v2 registration orchestrator

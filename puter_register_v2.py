@@ -17,7 +17,6 @@ from typing import Any
 
 from src.fingerprint_gen import FingerprintConfig, FingerprintGenerator
 from src.mailbox_provider import FailureReason, MailboxProvider, MailboxProviderPool
-from src.outlook_mailbox_provider import OutlookMailboxProvider
 from src.profile_manager import ProfileManager
 from src.scheduler import RegistrationScheduler
 from src.sticky_proxy import ProxyProviderConfig, StickyProxyManager
@@ -1079,19 +1078,6 @@ _PROXY_ENV_KEYS = (
 )
 
 
-def register_puter_mailbox_providers(mailbox_pool: MailboxProviderPool, state_dir: Path) -> None:
-    outlook_pool_raw = (
-        os.environ.get("PUTER_OUTLOOK_POOL_FILE") or os.environ.get("OUTLOOK_POOL_FILE") or ""
-    ).strip()
-    if outlook_pool_raw:
-        mailbox_pool.register_provider(
-            OutlookMailboxProvider(
-                pool_path=Path(outlook_pool_raw),
-                used_path=state_dir / "outlook_used.txt",
-            )
-        )
-
-
 def load_puter_proxy_config(state_dir: Path) -> ProxyProviderConfig:
     proxy_env_present = any(os.environ.get(name) for name in _PROXY_ENV_KEYS)
     if proxy_env_present:
@@ -1157,7 +1143,8 @@ async def async_main() -> None:
         registry_path=state_dir / "used_emails.json",
         health_path=state_dir / "mailbox_health.json",
     )
-    register_puter_mailbox_providers(mailbox_pool, state_dir)
+    # providers are registered externally or via config
+    # for now, this is a placeholder; providers are registered by the caller
 
     username_gen = UsernameGenerator(state_dir / "used_usernames.json")
 

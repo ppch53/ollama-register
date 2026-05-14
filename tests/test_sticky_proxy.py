@@ -7,9 +7,7 @@ from unittest.mock import patch
 
 import httpx
 
-from puter_register_v2 import load_puter_proxy_config, register_puter_mailbox_providers
-from src.mailbox_provider import MailboxProviderPool
-from src.outlook_mailbox_provider import OutlookMailboxProvider
+from puter_register_v2 import load_puter_proxy_config
 from src.sticky_proxy import ProxyProviderConfig, StickyProxyManager, _extract_ip
 
 
@@ -96,38 +94,6 @@ class StickyProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("http", config.proxy_type)
         self.assertEqual("http://proxy-api.test/gen", config.api_url)
         self.assertEqual("la.residential.rayobyte.com", config.host)
-
-    def test_puter_registers_outlook_pool_from_env(self) -> None:
-        pool = MailboxProviderPool(
-            registry_path=self.state_dir / "used_emails.json",
-            health_path=self.state_dir / "mailbox_health.json",
-        )
-
-        with patch.dict(
-            "os.environ",
-            {"PUTER_OUTLOOK_POOL_FILE": str(self.state_dir / "outlook_pool.txt")},
-            clear=False,
-        ):
-            register_puter_mailbox_providers(pool, self.state_dir)
-
-        self.assertEqual(1, len(pool._providers))
-        self.assertIsInstance(pool._providers[0], OutlookMailboxProvider)
-
-    async def test_outlook_provider_creates_address_and_marks_used(self) -> None:
-        pool_path = self.state_dir / "outlook_pool.txt"
-        used_path = self.state_dir / "outlook_used.txt"
-        pool_path.write_text(
-            "user@example.com----pass----9e5f94bc-e8a4-4e73-b8be-63364c29d753"
-            "----M.C1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n",
-            encoding="utf-8",
-        )
-        provider = OutlookMailboxProvider(pool_path, used_path)
-
-        email = await provider.create_address()
-
-        self.assertEqual("user@example.com", email)
-        self.assertIn("user@example.com", used_path.read_text(encoding="utf-8"))
 
     async def test_b2proxy_api_extraction_acquires_session_proxy_url(self) -> None:
         config = ProxyProviderConfig.from_env(

@@ -100,6 +100,22 @@ python main.py -n 10 -c 3
 The Puter flow has a legacy/manual path and a newer Camoufox-based v2 path.
 The v2 path is the primary implementation for continued work.
 
+Puter v2 uses `src/sticky_proxy.py` for browser proxy sessions. If no
+`v2/state/proxy_config.json` exists, it reads `PROXY_PROVIDER`,
+`PROXY_SCHEME`, `PROXY_HOST`, `PROXY_PORT`, `PROXY_USERNAME`,
+`PROXY_PASSWORD`, `PROXY_COUNTRY`, and `PROXY_API_URL` from the environment.
+For B2Proxy dynamic residential extraction, set `PROXY_PROVIDER=b2proxy`,
+`PROXY_SCHEME=http`, and `PROXY_API_URL=<your extraction API URL>`; the API
+response can be either `host:port` or a full proxy URL. `PROXY_IP_CHECK_URL`
+can override the default IP proof endpoint when a provider is sensitive to a
+particular checker.
+
+For email delivery, Puter v2 can use the existing Outlook pool format from
+`outlook_inbox.py`. Set `PUTER_OUTLOOK_POOL_FILE` or `OUTLOOK_POOL_FILE` to a
+pool file whose lines look like `email----password----client_id----refresh_token`
+or `email----password----refresh_token----client_id`; used addresses are tracked
+under `v2/state/outlook_used.txt`.
+
 Main files:
 
 - `puter_register_v2.py` - Puter v2 registration orchestrator

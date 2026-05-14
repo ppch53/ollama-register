@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import sys
 import time
@@ -16,9 +17,10 @@ from typing import Any
 
 from src.fingerprint_gen import FingerprintConfig, FingerprintGenerator
 from src.mailbox_provider import FailureReason, MailboxProvider, MailboxProviderPool
+from src.outlook_mailbox_provider import OutlookMailboxProvider
 from src.profile_manager import ProfileManager
 from src.scheduler import RegistrationScheduler
-from src.sticky_proxy import StickyProxyManager
+from src.sticky_proxy import ProxyProviderConfig, StickyProxyManager
 from src.username_gen import UsernameGenerator
 from src.utils import (
     append_jsonl,
@@ -1063,6 +1065,45 @@ class QuarantineManager:
 # CLI
 # ---------------------------------------------------------------------------
 
+_PROXY_ENV_KEYS = (
+    "PROXY_PROVIDER",
+    "PROXY_SCHEME",
+    "PROXY_TYPE",
+    "PROXY_HOST",
+    "PROXY_PORT",
+    "PROXY_USERNAME",
+    "PROXY_PASSWORD",
+    "PROXY_COUNTRY",
+    "PROXY_API_URL",
+    "REGISTER_PROXY_API",
+)
+
+
+def register_puter_mailbox_providers(mailbox_pool: MailboxProviderPool, state_dir: Path) -> None:
+    outlook_pool_raw = (
+        os.environ.get("PUTER_OUTLOOK_POOL_FILE") or os.environ.get("OUTLOOK_POOL_FILE") or ""
+    ).strip()
+    if outlook_pool_raw:
+        mailbox_pool.register_provider(
+            OutlookMailboxProvider(
+                pool_path=Path(outlook_pool_raw),
+                used_path=state_dir / "outlook_used.txt",
+            )
+        )
+
+
+def load_puter_proxy_config(state_dir: Path) -> ProxyProviderConfig:
+    proxy_env_present = any(os.environ.get(name) for name in _PROXY_ENV_KEYS)
+    if proxy_env_present:
+        return ProxyProviderConfig.from_env()
+
+    proxy_config_path = state_dir / "proxy_config.json"
+    proxy_data = load_json(proxy_config_path)
+    if proxy_data:
+        return ProxyProviderConfig(**proxy_data)
+
+    return ProxyProviderConfig.from_env()
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Puter v2 Stealth Registration")
     parser.add_argument("--live", action="store_true", help="Enable live registration (requires PUTER_LIVE_REGISTRATION=1)")
@@ -1079,7 +1120,6 @@ async def async_main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    import os
     live_ok = os.environ.get("PUTER_LIVE_REGISTRATION", "0") == "1"
 
     if args.live and not live_ok:
@@ -1105,29 +1145,19 @@ async def async_main() -> None:
     fingerprint_gen = FingerprintGenerator(state_dir / "fingerprint_registry.json")
     scheduler = RegistrationScheduler(state_dir / "scheduler_state.json")
 
-    proxy_config_path = state_dir / "proxy_config.json"
-    proxy_data = load_json(proxy_config_path)
-    if proxy_data:
-        from src.sticky_proxy import ProxyProviderConfig
-        proxy_cfg = ProxyProviderConfig(**proxy_data)
-    else:
-        from src.sticky_proxy import ProxyProviderConfig
-        proxy_cfg = ProxyProviderConfig(
-            host="la.residential.rayobyte.com",
-            port=8000,
-            username=os.environ.get("PROXY_USERNAME", ""),
-            password=os.environ.get("PROXY_PASSWORD", ""),
-            country="US",
-        )
-    proxy_mgr = StickyProxyManager(proxy_cfg, state_dir)
+    proxy_cfg = load_puter_proxy_config(state_dir)
+    proxy_mgr = StickyProxyManager(
+        proxy_cfg,
+        state_dir,
+        ip_check_url=os.environ.get("PROXY_IP_CHECK_URL", "https://httpbin.org/ip"),
+    )
 
     # mailbox
     mailbox_pool = MailboxProviderPool(
         registry_path=state_dir / "used_emails.json",
         health_path=state_dir / "mailbox_health.json",
     )
-    # providers are registered externally or via config
-    # for now, this is a placeholder; providers are registered by the caller
+    register_puter_mailbox_providers(mailbox_pool, state_dir)
 
     username_gen = UsernameGenerator(state_dir / "used_usernames.json")
 

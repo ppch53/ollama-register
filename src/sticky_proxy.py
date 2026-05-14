@@ -9,27 +9,61 @@ Phone-triggered IPs are blacklisted for the rest of the day.
 """
 from __future__ import annotations
 
-import json
-import random
-import socket
-import time
+import asyncio
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
-from src.utils import append_jsonl, load_json, read_jsonl, utcnow_iso
+from src.utils import append_jsonl, read_jsonl, utcnow_iso
+
+_API_EXTRACTION_PROVIDERS = {"b2proxy", "bestgo"}
+_PROVIDER_ALIASES = {
+    "b2": "b2proxy",
+    "b2proxyresidential": "b2proxy",
+    "bestgo": "b2proxy",
+    "bestgorrp": "b2proxy",
+}
 
 
 @dataclass(slots=True)
 class ProxyProviderConfig:
-    host: str
-    port: int
-    username: str
-    password: str
+    host: str = ""
+    port: int = 0
+    username: str = ""
+    password: str = ""
     country: str = "US"
     proxy_type: str = "socks5"  # socks5 | http
+    provider: str = "generic"
+    api_url: str | None = None
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "ProxyProviderConfig":
+        source = env or os.environ
+        provider = _normalise_provider(source.get("PROXY_PROVIDER"))
+        proxy_type = (source.get("PROXY_SCHEME") or source.get("PROXY_TYPE") or "socks5").strip()
+        port_raw = (source.get("PROXY_PORT") or "8000").strip()
+        try:
+            port = int(port_raw)
+        except ValueError as exc:
+            raise ValueError(f"Invalid PROXY_PORT: {port_raw}") from exc
+        return cls(
+            host=(source.get("PROXY_HOST") or "la.residential.rayobyte.com").strip(),
+            port=port,
+            username=(source.get("PROXY_USERNAME") or "").strip(),
+            password=(source.get("PROXY_PASSWORD") or "").strip(),
+            country=(source.get("PROXY_COUNTRY") or "US").strip().upper(),
+            proxy_type=proxy_type.lower(),
+            provider=provider,
+            api_url=_clean(source.get("PROXY_API_URL")) or _clean(source.get("REGISTER_PROXY_API")),
+        )
+
+    @property
+    def uses_api_extraction(self) -> bool:
+        return self.provider in _API_EXTRACTION_PROVIDERS
 
 
 @dataclass(slots=True)
@@ -91,17 +125,22 @@ class StickyProxyManager:
         auth = f"{username}:{self.config.password}"
         return f"{self.config.proxy_type}://{auth}@{self.config.host}:{self.config.port}"
 
+    async def _extract_api_proxy_url(self) -> str:
+        if not self.config.api_url:
+            raise ValueError("Provider b2proxy requires PROXY_API_URL or REGISTER_PROXY_API")
+        return await asyncio.to_thread(_extract_api_proxy_url_sync, self.config)
+
     async def _resolve_ip(self, proxy_url: str) -> str:
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=15.0) as client:
-            resp = await client.get(self.ip_check_url)
-            resp.raise_for_status()
-            return resp.json().get("origin", "")
+        return await asyncio.to_thread(_resolve_ip_sync, proxy_url, self.ip_check_url)
 
     async def acquire_session(self, account_id: str, duration_minutes: int = 30) -> ProxySession:
         from src.utils import new_uuid
 
         session_id = new_uuid()
-        proxy_url = self._build_proxy_url(session_suffix=session_id)
+        if self.config.uses_api_extraction:
+            proxy_url = await self._extract_api_proxy_url()
+        else:
+            proxy_url = self._build_proxy_url(session_suffix=session_id)
 
         # resolve initial IP
         ip_pre = await self._resolve_ip(proxy_url)
@@ -164,3 +203,55 @@ class StickyProxyManager:
             "ip_post": session.ip_post,
             "drift_detected": session.drift_detected,
         }
+
+
+def _clean(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip().strip('"').strip("'")
+    return value or None
+
+
+def _normalise_provider(provider: str | None) -> str:
+    value = (provider or "generic").strip().lower().replace(" ", "")
+    return _PROVIDER_ALIASES.get(value, value)
+
+
+def _proxy_url_from_api_response(payload: str, proxy_type: str) -> str:
+    first_line = payload.strip().splitlines()[0].strip()
+    if not first_line:
+        raise ValueError("Proxy API returned an empty response")
+    parsed = urlparse(first_line)
+    if parsed.scheme and parsed.hostname and parsed.port:
+        return first_line
+    if ":" not in first_line:
+        raise ValueError(f"Unexpected proxy API response: {first_line}")
+    return f"{proxy_type}://{first_line}"
+
+
+def _extract_api_proxy_url_sync(config: ProxyProviderConfig) -> str:
+    if not config.api_url:
+        raise ValueError("Provider b2proxy requires PROXY_API_URL or REGISTER_PROXY_API")
+    with httpx.Client(timeout=20.0) as client:
+        response = client.get(config.api_url)
+        response.raise_for_status()
+    return _proxy_url_from_api_response(response.text, config.proxy_type)
+
+
+def _resolve_ip_sync(proxy_url: str, ip_check_url: str) -> str:
+    with httpx.Client(proxy=proxy_url, timeout=15.0) as client:
+        response = client.get(ip_check_url)
+        response.raise_for_status()
+        return _extract_ip(response)
+
+
+def _extract_ip(response: httpx.Response) -> str:
+    text = response.text.strip()
+    content_type = response.headers.get("content-type", "")
+    if "json" in content_type or text.startswith("{"):
+        payload = response.json()
+        for key in ("origin", "ip", "query"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                return value.split(",", 1)[0].strip()
+    return text.splitlines()[0].strip()
